@@ -63,8 +63,14 @@ def main():
         sys.stdout.write("\n*** run.py: %s\n" % type(e).__name__)
         status = 1
     finally:
-        proc.kill()
-        proc.wait()
+        # Ctrl-a x makes QEMU exit cleanly, so plugins flush their logs.
+        try:
+            proc.stdin.write(b"\x01x")
+            proc.stdin.flush()
+            proc.wait(timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            proc.kill()
+            proc.wait()
     print()
     return status
 
