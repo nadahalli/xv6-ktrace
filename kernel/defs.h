@@ -61,6 +61,13 @@ void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
 
+// ktrace.c
+void            ktraceinit(void);
+void            ktraceinithart(void);
+void            ktrace_quiesce(void);
+void            ktrace_setpid(int);
+uint64          ktrace_fault(uint64 *, uint64, uint64, uint64);
+
 // log.c
 void            initlog(int, struct superblock*);
 void            log_write(struct buf*);

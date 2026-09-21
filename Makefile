@@ -27,6 +27,8 @@ OBJS = \
   $K/exec.o \
   $K/sysfile.o \
   $K/kernelvec.o \
+  $K/ktrace.o \
+  $K/ktdecode.o \
   $K/plic.o \
   $K/virtio_disk.o
 

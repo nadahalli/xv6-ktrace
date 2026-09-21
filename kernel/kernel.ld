@@ -35,6 +35,14 @@ SECTIONS
   }
 
   .bss : {
+    /* ktrace.c state, on pages of its own so that it can never share
+       a page with a traced object. */
+    . = ALIGN(0x1000);
+    PROVIDE(ktrace_start = .);
+    *(.bss.ktrace)
+    . = ALIGN(0x1000);
+    PROVIDE(ktrace_end = .);
+
     . = ALIGN(16);
     *(.sbss .sbss.*) /* do not need to distinguish this from .bss */
     . = ALIGN(16);
