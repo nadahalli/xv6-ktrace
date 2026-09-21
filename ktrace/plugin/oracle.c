@@ -2,9 +2,18 @@
 // physical address ranges. The in-kernel tracer is checked against this.
 //
 //   -plugin ktrace/plugin/oracle.so,out=FILE,range=LO:HI[,range=LO:HI...]
+//           [,marker=ADDR][,max=LINES]
 //
 // LO inclusive, HI exclusive, both hex physical addresses.
 // One line per access:  cpu R|W paddr size value pc
+//
+// With marker=ADDR, the ranges are logged only while the guest says a
+// watch is armed. The guest stores (watch << 1) | armed at ADDR, see
+// ktrace_marker in kernel/ktrace.c, and those stores are logged too.
+// Without it, a busy range is logged from boot to exit, which for the
+// xv6 process table is gigabytes.
+//
+// After max lines (default 20 million) the log ends with "truncated".
 
 #include <glib.h>
 #include <inttypes.h>
@@ -20,8 +29,12 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
 static struct { uint64_t lo, hi; } ranges[MAXRANGES];
 static int nranges;
+static uint64_t marker;     // 0 if none
+static uint64_t armed = ~0; // bitmask of armed watches
+static uint64_t lines, maxlines = 20000000;
 static FILE *out;
 static GMutex lock;
+
 
 static uint64_t
 value_of(qemu_plugin_meminfo_t info)
@@ -36,6 +49,22 @@ value_of(qemu_plugin_meminfo_t info)
   }
 }
 
+// call with the lock held.
+static void
+emit(unsigned cpu, qemu_plugin_meminfo_t info, uint64_t pa, unsigned size,
+     void *pc)
+{
+  if(out == NULL || lines > maxlines)
+    return;
+  if(lines++ == maxlines){
+    fprintf(out, "truncated\n");
+    return;
+  }
+  fprintf(out, "%u %c %" PRIx64 " %u %" PRIx64 " %" PRIx64 "\n",
+          cpu, qemu_plugin_mem_is_store(info) ? 'W' : 'R',
+          pa, size, value_of(info), (uint64_t)(uintptr_t)pc);
+}
+
 static void
 mem_cb(unsigned int cpu, qemu_plugin_meminfo_t info, uint64_t vaddr, void *pc)
 {
@@ -45,13 +74,25 @@ mem_cb(unsigned int cpu, qemu_plugin_meminfo_t info, uint64_t vaddr, void *pc)
   uint64_t pa = qemu_plugin_hwaddr_phys_addr(hw);
   unsigned size = 1u << qemu_plugin_mem_size_shift(info);
 
+  if(marker != 0 && pa == marker){
+    if(qemu_plugin_mem_is_store(info)){
+      uint64_t v = value_of(info);
+      g_mutex_lock(&lock);
+      if(v & 1)
+        armed |= 1ull << (v >> 1);
+      else
+        armed &= ~(1ull << (v >> 1));
+      emit(cpu, info, pa, size, pc);
+      g_mutex_unlock(&lock);
+    }
+    return;
+  }
+
   for(int i = 0; i < nranges; i++){
     if(pa + size > ranges[i].lo && pa < ranges[i].hi){
       g_mutex_lock(&lock);
-      if(out != NULL)
-        fprintf(out, "%u %c %" PRIx64 " %u %" PRIx64 " %" PRIx64 "\n",
-                cpu, qemu_plugin_mem_is_store(info) ? 'W' : 'R',
-                pa, size, value_of(info), (uint64_t)(uintptr_t)pc);
+      if(armed != 0)
+        emit(cpu, info, pa, size, pc);
       g_mutex_unlock(&lock);
       return;
     }
@@ -88,6 +129,11 @@ qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info,
   for(int i = 0; i < argc; i++){
     if(strncmp(argv[i], "out=", 4) == 0){
       path = argv[i] + 4;
+    } else if(strncmp(argv[i], "marker=", 7) == 0){
+      marker = strtoull(argv[i] + 7, NULL, 16);
+      armed = 0;
+    } else if(strncmp(argv[i], "max=", 4) == 0){
+      maxlines = strtoull(argv[i] + 4, NULL, 10);
     } else if(strncmp(argv[i], "range=", 6) == 0 && nranges < MAXRANGES){
       char *end;
       ranges[nranges].lo = strtoull(argv[i] + 6, &end, 16);

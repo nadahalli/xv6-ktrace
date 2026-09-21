@@ -7,4 +7,4 @@
 
 #define KTRACE_NWATCH 8      // simultaneous watches
 #define KTRACE_NPAGE  64     // protected pages, over all watches
-#define KTRACE_NEVENT 131072 // log capacity, in events
+#define KTRACE_NEVENT 524288 // log capacity, in events; 40 bytes each
