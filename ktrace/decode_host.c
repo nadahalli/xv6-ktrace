@@ -13,8 +13,8 @@ main(void)
   unsigned int insn;
   struct ktinsn d;
 
-  while(scanf("%x", &insn) == 1){
-    if(ktdecode(insn, &d) < 0)
+  while (scanf("%x", &insn) == 1) {
+    if (ktdecode(insn, &d) < 0)
       printf("none\n");
     else
       printf("%s len=%d size=%d sext=%d reg=%d rs1=%d rs2=%d imm=%ld\n",

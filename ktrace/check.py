@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Judge the in-kernel tracer against the QEMU plugin oracle.
 #
-#   ktrace/check.py [--cpus N] [--timeout S] --watch SYM[+OFF][:LEN] ... -- CMD ...
+#   ktrace/check.py [--cpus N] [--timeout S] [--before CMD] ... [--cycles N]
+#                   --watch SYM[+OFF][:LEN] ... -- CMD ...
 #
 # Boots xv6 with the oracle attached, arms the watches, runs the
 # workload commands, stops tracing, dumps the in-kernel log, and
@@ -68,6 +69,12 @@ def main():
     ap.add_argument("--timeout", type=float, default=600)
     ap.add_argument("--watch", action="append", required=True)
     ap.add_argument("--keep", help="directory to keep the raw logs in")
+    ap.add_argument("--before", action="append", default=[],
+                    help="command to run before arming, e.g. 'forktest &', "
+                         "so that other CPUs are busy while the watch arms")
+    ap.add_argument("--cycles", type=int, default=1,
+                    help="repeat before, watch, workload, stop this many "
+                         "times; arming is the delicate moment")
     ap.add_argument("cmds", nargs="+")
     args = ap.parse_args()
 
@@ -84,8 +91,9 @@ def main():
     plugin = "%s,out=%s,%s" % (os.path.join(HERE, "plugin", "oracle.so"),
                                oracle_path, ",".join(ranges))
 
-    cmds = ["echo watch %x %d > ktrace" % w for w in watches]
-    cmds += args.cmds + ["echo stop > ktrace", "cat ktrace"]
+    cycle = args.before + ["echo watch %x %d > ktrace" % w for w in watches]
+    cycle += args.cmds + ["echo stop > ktrace"]
+    cmds = cycle * args.cycles + ["cat ktrace"]
     run = subprocess.run([sys.executable, os.path.join(HERE, "run.py"),
                           "--cpus", str(args.cpus), "--timeout",
                           str(args.timeout), "--plugin", plugin] + cmds,
@@ -102,12 +110,13 @@ def main():
     for m in re.finditer(r"ktrace: watch (\d+) armed: 0x(\w+) len (\d+)", console):
         a = int(m.group(2), 16)
         slots[int(m.group(1))] = (a, a + int(m.group(3)))
-    stopped = re.search(r"ktrace: stopped: (\d+) events logged, (\d+) dropped, "
-                        r"(\d+) faults, (\d+) retried", console)
-    if len(slots) != len(watches) or not stopped:
+    # the counts are cumulative, so the last stop has the totals.
+    stopped = re.findall(r"ktrace: stopped: (\d+) events logged, (\d+) dropped, "
+                         r"(\d+) faults, (\d+) retried", console)
+    if len(slots) != len(watches) or len(stopped) != args.cycles:
         print(console[-2000:])
         sys.exit("FAIL: watches were not armed and stopped (logs in %s)" % keep)
-    logged, dropped, faults, retried = map(int, stopped.groups())
+    logged, dropped, faults, retried = map(int, stopped[-1])
 
     ours = []
     for line in console.splitlines():

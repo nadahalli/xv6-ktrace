@@ -14,8 +14,9 @@
 // 1. Everything ktrace_fault() reads or writes, other than the traced
 //    object itself, lives in the .bss.ktrace section or on the kernel
 //    stack. Neither can be watched. A fault inside the handler would
-//    deadlock on kt.lock, so the handler calls nothing outside this
-//    file except panic().
+//    deadlock on kt.lock, so the only outside code the handler calls
+//    is ktdecode(), which touches nothing but its arguments, and
+//    panic().
 //
 // 2. kt.lock is held for the whole of each emulated access, by every
 //    CPU. Accesses to a protected page are therefore totally ordered,
@@ -421,6 +422,11 @@ ktwatch(uint64 lo, uint64 len)
   pop_off();
 
   // rule 3: wait until no CPU can still reach the pages directly.
+  // make KTRACE_INJECT=NO_QUIESCE builds a tracer without this wait,
+  // to show that ktrace/check.py catches a tracer that loses accesses.
+#ifdef KTRACE_INJECT_NO_QUIESCE
+  gen = 0;
+#endif
   for (;;) {
     int waiting = 0;
     push_off();

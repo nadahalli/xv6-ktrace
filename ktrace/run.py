@@ -10,6 +10,8 @@ import argparse, os, select, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROMPT = b"$ "
+# two QEMUs cannot share one image; KTRACE_FS points a second run at a copy.
+FSIMG = os.environ.get("KTRACE_FS", "fs.img")
 
 
 def qemu_argv(cpus, plugin):
@@ -17,7 +19,7 @@ def qemu_argv(cpus, plugin):
             "-kernel", "kernel/kernel", "-m", "128M", "-smp", str(cpus),
             "-nographic",
             "-global", "virtio-mmio.force-legacy=false",
-            "-drive", "file=fs.img,if=none,format=raw,id=x0",
+            "-drive", "file=%s,if=none,format=raw,id=x0" % FSIMG,
             "-device", "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0"]
     if plugin:
         argv += ["-plugin", plugin]
