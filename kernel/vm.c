@@ -7,6 +7,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "fs.h"
+#include "ktrace.h"
 
 /*
  * the kernel's page table.
@@ -41,6 +42,11 @@ kvmmake(void)
   // map kernel data and the physical RAM we'll make use of.
   kvmmap(kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP - (uint64)etext,
          PTE_R | PTE_W);
+
+  // map the same RAM a second time, for ktrace.c: it revokes the
+  // mapping above for pages it traces and uses this one itself.
+  kvmmap(kpgtbl, (uint64)etext + KTRACE_ALIAS, (uint64)etext,
+         PHYSTOP - (uint64)etext, PTE_R | PTE_W);
 
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.

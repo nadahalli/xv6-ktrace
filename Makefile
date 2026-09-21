@@ -27,6 +27,8 @@ OBJS = \
   $K/exec.o \
   $K/sysfile.o \
   $K/kernelvec.o \
+  $K/ktrace.o \
+  $K/ktdecode.o \
   $K/plic.o \
   $K/virtio_disk.o
 
@@ -65,6 +67,9 @@ DETFLAGS = -ffile-prefix-map=$(CURDIR)=.
 
 CFLAGS = -Wall -Werror -Wno-unknown-attributes -O -fno-omit-frame-pointer -ggdb -gdwarf-2
 CFLAGS += $(DETFLAGS)
+ifdef KTRACE_INJECT
+CFLAGS += -DKTRACE_INJECT_$(KTRACE_INJECT)
+endif
 CFLAGS += -march=rv64gc
 CFLAGS += -std=gnu99
 CFLAGS += -MD

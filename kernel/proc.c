@@ -441,6 +441,8 @@ scheduler(void)
     intr_on();
     intr_off();
 
+    ktrace_quiesce();
+
     int found = 0;
     for (p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
@@ -450,6 +452,7 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        ktrace_setpid(p->pid);
         swtch(&c->context, &p->context);
 
         // Don't re-enable interrupts on release.
@@ -458,6 +461,7 @@ scheduler(void)
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
+        ktrace_setpid(0);
         found = 1;
       }
       release(&p->lock);
@@ -537,8 +541,9 @@ forkret(void)
   }
 
   // return to user space, mimicing usertrap()'s return.
-  prepare_return();
+  // no struct proc access after prepare_return(), see there.
   uint64 satp = MAKE_SATP(p->pagetable);
+  prepare_return();
   uint64 trampoline_userret = TRAMPOLINE + (userret - trampoline);
   ((void (*)(uint64))trampoline_userret)(satp);
 }

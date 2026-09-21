@@ -8,7 +8,8 @@ void main();
 void timerinit();
 
 // entry.S needs one stack per CPU.
-__attribute__((aligned(16))) char stack0[4096 * NCPU];
+// page-aligned, so that ktrace.c has to refuse as few pages as possible.
+__attribute__((aligned(4096))) char stack0[4096 * NCPU];
 
 // entry.S jumps here in machine mode on stack0.
 void
