@@ -66,6 +66,7 @@ From the host:
     ktrace/check.py --watch ticks -- forktest
     ktrace/check.py --watch proc:360 -- forktest      first struct proc
     ktrace/check.py --watch proc -- forktest          whole table, ~7 min
+    ktrace/bench.py --runs 21                         cost, see below
 
 `--watch` takes `SYMBOL[+OFFSET][:LENGTH]`. `--before CMD` runs a
 command before arming and `--cycles N` repeats the whole sequence.
@@ -138,6 +139,48 @@ That rests on `test_decode.py`, which compares the decoder with objdump
 on all 49,152 16-bit encodings and about 290,000 32-bit ones, and on
 xv6 continuing to work while hundreds of thousands of its instructions
 are emulated.
+
+## Cost
+
+`ktrace/bench.py` times `forktest` on 4 CPUs under QEMU, without the
+oracle plugin. Median of 21 runs:
+
+| Watch | `forktest` | Slowdown | Faults per run | Events per run |
+|---|---|---|---|---|
+| none | 0.050 s | | 0 | 0 |
+| `ticks`, 4 bytes on a quiet page | 0.043 s | none measurable | 99 | 1 |
+| `proc[0]`, 360 bytes | 0.225 s | 4.5x | 165,879 | 2,682 |
+| whole process table | 0.414 s | 8.2x | 326,364 | 186,145 |
+
+The untraced time is short and noisy. Over three sessions it ranged
+from 0.043 s to 0.064 s, while the traced times stayed within 5%. So
+the slowdowns are about 4x to 5x for one process entry and 6x to 9x for
+the whole table. The steadier number is the cost of one fault, which
+came out at about 1 microsecond in every session. The whole-table run
+overflows the log. Its event count includes the dropped events, which
+the kernel counts.
+
+Where the time goes:
+
+- Every access to a protected page traps: 31 registers saved, the
+  instruction decoded, a global lock taken, the access emulated and
+  logged, the registers restored. The slowdown follows how hot the
+  page is, not how large the watched object is.
+- Neighbours pay too. Protection is per 4 KB page. Watching one process
+  entry took 165,879 faults to log 2,682 events, so 98% of the faults
+  were other process entries on the same page.
+- `kt.lock` serializes every CPU that touches a protected page. The
+  same lock is what gives the log a total order.
+
+With no watch armed, the cost is 14 more register saves and restores
+per kernel trap, one load and compare per trap and scheduler pass, two
+stores per context switch, about 256 KB of page tables for the alias
+mapping, and 20 MB for the log. The `ticks` row shows that none of it
+is measurable here.
+
+These ratios probably understate hardware. QEMU slows an ordinary load
+far more than it slows a trap, so the two are closer together under
+emulation than on silicon. Nothing here was measured on hardware.
 
 ## Limits
 
